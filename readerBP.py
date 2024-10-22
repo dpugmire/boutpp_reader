@@ -463,14 +463,32 @@ def build3DMesh(grid2D, data, nx, ny, guardJ) :
             dz23 = abs(zij_1 - zij)
 
             ##John's suggestion:
-            dz01 = 0.5*(zij1 - zij)
-            dz23 = 0.5*(zij_1-zij)
+            dz23 = 0.5*(zij - zij1)
+            dz01 = 0.5*(zij_1 - zij)
             dzFactor = 1
             #dzFactor = 1.0
             dz01 = dz01 * dzFactor
             dz23 = dz23 * dzFactor
+            x0 = .5*(zij-zij1)
+            x1 = .5*(zij1-zij)
+            x2 = .5*(zij_1-zij)
+            x3 = .5*(zij-zij_1)
+            dz01 = x2
+            dz23 = x1
+            #shift for v0,v1: zShift[i,j-1] - zShift[i,j]
+            #shift for v2,3: zShift[i,j+1] - zShift[i,j]
+            dz01 = .5*(zij_1-zij)
+            dz23 = .5*(zij1-zij)
+            if i == 25 and j in [17,18,19,20] :
+                print((i,j), ': ', zij_1, zij, zij1)
+                print('    : ', dz01, dz23)
+                print('   --> ', x2, x1)
+            dzFactor = 1.0
+            dz01 = dz01 * dzFactor
+            dz23 = dz23 * dzFactor
 
-            numRefine = 0
+
+            numRefine = 3
             hexPoints = getHexPoints(quadPts, k, dz, dz01, dz23, numRefine)
 
             # add the points and cells for each hex.
