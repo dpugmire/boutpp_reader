@@ -321,7 +321,7 @@ def addZShiftStuff(grid, data, nx, ny, guardJ) :
     writeVTK(grid, '/Users/dpn/quad3D.vtk')
     return grid
 
-def getHexPoints(quadPoints, k, dz, dz01, dz23, numRefine) :
+def getHexPoints(quadPoints, k, dz, dz01, dz23, numZRefine) :
 
     def interpolate(xRange, t ) :
         dx = xRange[1] - xRange[0]
@@ -330,39 +330,35 @@ def getHexPoints(quadPoints, k, dz, dz01, dz23, numRefine) :
 
     result = []
 
-    ## first plane.
-    #kzShift = k*(dPhi+dz01+dz23)
-    #k_z01 = kzShift + dz01
-    #k_z23 = kzShift + dz23
-
-    k_z01 = k*dz + dz01
-    k_z23 = k*dz + dz23
-    ## last plane
-    #k1zShift = (k+1) * (dPhi+dz01+dz23)
-    #k1_z01 = k1zShift + dz01
-    #k1_z23 = k1zShift + dz23
-
-    k1_z01 = (k+1) * dz + dz01
-    k1_z23 = (k+1) * dz + dz23
-
     # add first plane
     p0 = copy.deepcopy(quadPoints[0])
     p1 = copy.deepcopy(quadPoints[1])
     p2 = copy.deepcopy(quadPoints[2])
     p3 = copy.deepcopy(quadPoints[3])
+
+    k_z01 = k*dz + dz01
+    k_z23 = k*dz + dz23
+    k1_z01 = (k+1) * dz + dz01
+    k1_z23 = (k+1) * dz + dz23
+
     p0[2] = k_z01
     p1[2] = k_z01
     p2[2] = k_z23
     p3[2] = k_z23
+    p0 = tuple(p0)
+    p1 = tuple(p1)
+    p2 = tuple(p2)
+    p3 = tuple(p3)
+
     result.append((p0,p1,p2,p3))
 
     #interpolate between first and last planes if numRefine specified.
-    if numRefine > 0 :
+    if numZRefine > 0 :
         z01Range = (k_z01, k1_z01)
         z23Range = (k_z23, k1_z23)
-        dT = 1.0 / float(numRefine+1)
+        dT = 1.0 / float(numZRefine+1)
         t = dT
-        for n in range(numRefine) :
+        for n in range(numZRefine) :
             pi = copy.deepcopy(quadPoints)
             zt = interpolate(z01Range, t)
             _zi = pi[0][2] + zt
@@ -385,7 +381,122 @@ def getHexPoints(quadPoints, k, dz, dz01, dz23, numRefine) :
 
     return result
 
-def build3DMesh(grid2D, data, nx, ny, guardJ) :
+def RefineInJ(hexPoints, numJRefine) :
+
+    def interp(p0, p1, t) :
+        dx = p1[0]-p0[0]
+        dy = p1[1]-p0[1]
+        dz = p1[2]-p0[2]
+        pi = (p0[0] + t*dx, p0[1] + t*dy, p0[2] + t*dz)
+        return pi
+
+    dT = 1.0/(numJRefine+1)
+    result = []
+    for idx in range(0, len(hexPoints), 2) :
+        pln0 = hexPoints[idx]
+        pln1 = hexPoints[idx+1]
+
+        t = 0.0
+        for _ in range(numJRefine+1) :
+            vi0 = interp(pln0[0], pln0[3], t)
+            vi1 = interp(pln0[1], pln0[2], t)
+            vi2 = interp(pln0[1], pln0[2], t+dT)
+            vi3 = interp(pln0[0], pln0[3], t+dT)
+            result.append((vi0, vi1, vi2, vi3))
+
+            vi0 = interp(pln1[0], pln1[3], t)
+            vi1 = interp(pln1[1], pln1[2], t)
+            vi2 = interp(pln1[1], pln1[2], t+dT)
+            vi3 = interp(pln1[0], pln1[3], t+dT)
+            result.append((vi0, vi1, vi2, vi3))
+
+            t = t + dT
+
+    return result
+
+
+
+
+    pln0 = hexPoints[0]
+    plnN = hexPoints[-1]
+
+    xRange0 = (pln0[0][0], plnN[0][0])
+    xRange1 = (pln0[1][0], plnN[1][0])
+    xRange2 = (pln0[2][0], plnN[2][0])
+    xRange3 = (pln0[3][0], plnN[3][0])
+
+    jRange01 = (pln0[0][1], pln0[1][1])
+    jRange12 = (pln0[1][1], pln0[2][1])
+    jRange23 = (pln0[2][1], pln0[3][1])
+    jRange30 = (pln0[3][1], pln0[0][1])
+
+    ## This seems to be correct.
+    xRange_02 = (pln0[0][0], pln0[2][0])
+    xRange_13 = (pln0[1][0], pln0[3][0])
+    jRange_02 = (pln0[0][1], pln0[2][1])
+    jRange_13 = (pln0[1][1], pln0[3][1])
+
+    v0 = pln0[0]
+    v1 = pln0[1]
+    v2 = pln0[2]
+    v3 = pln0[3]
+
+    xi = (interpolate(xRange_02, 0.0), interpolate(xRange_02, 0.5), interpolate(xRange_02, 1.0))
+    yi = (interpolate(jRange_02, 0.0), interpolate(jRange_02, 0.5), interpolate(jRange_02, 1.0))
+    print('split quads: *********')
+    print(xi[0], yi[0])
+    print(xi[1], yi[1])
+    print(xi[2], yi[2])
+    print('*********')
+
+    zRange = (pln0[0][2], plnN[0][2])
+
+    dT = 1.0 / float(numJrefine+1)
+    t = 0
+    for n in range(numJrefine+1) :
+        j01 = (interpolate(jRange01, t), interpolate(jRange01, t+dT))
+        j12 = (interpolate(jRange12, t), interpolate(jRange12, t+dT))
+        j23 = (interpolate(jRange23, t), interpolate(jRange23, t+dT))
+        j30 = (interpolate(jRange30, t), interpolate(jRange30, t+dT))
+
+        pts0 = ((xRange0[0], j01[0], zRange[0]),
+                (xRange1[0], j12[0], zRange[0]),
+                (xRange2[0], j23[0], zRange[0]),
+                (xRange3[0], j30[0], zRange[0]))
+
+        pts1 = ((xRange0[1], j30[1], zRange[1]),
+                (xRange1[1], j01[1], zRange[1]),
+                (xRange2[1], j12[1], zRange[1]),
+                (xRange3[1], j23[1], zRange[1]))
+
+        result.append(pts0)
+        result.append(pts1)
+        t = t + dT
+
+    return result
+'''
+    jRange = (quadPoints[0][1],quadPoints[2][1])
+    dT = 1.0 / float(numJRefine+1)
+    t = dT
+
+    print('\n\n********')
+    print(jRange)
+    for n in range(numJRefine) :
+        pi = copy.deepcopy(quadPoints)
+        jt = interpolate(jRange, t)
+        print('    ', n, ':', t, jt)
+
+        pi[0][2] = k1_z01
+        pi[1][2] = k1_z01
+        pi[2][2] = k1_z23
+        pi[3][2] = k1_z23
+        pi[2][1] = jt
+        pi[3][1] = jt
+        result.append((pi[0], pi[1], pi[2], pi[3]))
+        t = t + dT
+'''
+
+def build3DMesh(grid2D, data, nx, ny, guardJ, numJRefine) :
     zShiftMap = {}
     def getPt(_ds, idx) :
         _p = _ds.GetPoint(idx)
@@ -424,27 +535,31 @@ def build3DMesh(grid2D, data, nx, ny, guardJ) :
     nc = grid2D.GetNumberOfCells()
 
     ptId = 0
+    nk = 81
     coreBounds = [(0,32), (12,52)]
     coreBounds = [(5,25), (13,49)]
-    coreBounds = [(25,25), (13,49)]
-    #coreBounds = [(25,25), (15,15)]
+    #coreBounds = [(25,25), (13,49)]
+    coreBounds = [(25,25), (20,20)]
+    coreBounds = [(20,35), (0,100)]
+    #nk = 10
 
     dz = 0.015514
-    nk = 81
+    nzs = zShift.GetNumberOfValues()
+    loopCnt = -1
     for k in range(nk) :
         for cellIdx in range(nc) :
+            loopCnt = loopCnt+1
             i = cellIdx // ny
             j = cellIdx % ny
 
             if not inBounds(i,j, coreBounds) :
                 continue
 
-            ##skip the corner cases....
+            #skip the corner cases....
             if j == 0 or j == ny-1 : continue
 
-            if i == 25 and j in [17,18,19,20] :
-                print('pause here to look at zShift')
-
+            #if i == 25 and j in [17,18,19,20] :
+            #    print('pause here to look at zShift')
 
             cell = grid2D.GetCell(cellIdx)
             ptIds = cell.GetPointIds()
@@ -454,42 +569,113 @@ def build3DMesh(grid2D, data, nx, ny, guardJ) :
 
             zij = zShift.GetValue(cellIdx)
             arrZShift.InsertNextValue(zij)
+
             ij_p1 = i*ny + (j+1)
             ij_m1 = i*ny + (j-1)
             zij1 = zShift.GetValue(ij_p1)
             zij_1 = zShift.GetValue(ij_m1)
 
-            dz01 = abs(zij1 - zij)
-            dz23 = abs(zij_1 - zij)
-
-            ##John's suggestion:
-            dz23 = 0.5*(zij - zij1)
-            dz01 = 0.5*(zij_1 - zij)
-            dzFactor = 1
-            #dzFactor = 1.0
-            dz01 = dz01 * dzFactor
-            dz23 = dz23 * dzFactor
-            x0 = .5*(zij-zij1)
-            x1 = .5*(zij1-zij)
-            x2 = .5*(zij_1-zij)
-            x3 = .5*(zij-zij_1)
-            dz01 = x2
-            dz23 = x1
-            #shift for v0,v1: zShift[i,j-1] - zShift[i,j]
-            #shift for v2,3: zShift[i,j+1] - zShift[i,j]
             dz01 = .5*(zij_1-zij)
             dz23 = .5*(zij1-zij)
-            if i == 25 and j in [17,18,19,20] :
-                print((i,j), ': ', zij_1, zij, zij1)
-                print('    : ', dz01, dz23)
-                print('   --> ', x2, x1)
             dzFactor = 1.0
             dz01 = dz01 * dzFactor
             dz23 = dz23 * dzFactor
 
+            numZRefine = 0
+            hexPoints = getHexPoints(quadPts, k, dz, dz01, dz23, numZRefine)
+            if True : #numJRefine > 0 :
+                if i == 10 and j == 10 and k == 0 :
+                    print('hello')
+                hexPoints = RefineInJ(hexPoints, numJRefine)
+            if i == 10 and j == 10 and k == 0 :
+                print('************')
+                for pp in hexPoints :
+                    for p in pp :
+                        print(p)
+                print('************')
 
-            numRefine = 3
-            hexPoints = getHexPoints(quadPts, k, dz, dz01, dz23, numRefine)
+            # add the points and cells for each hex.
+            for cnt in range(0, len(hexPoints), 2) :
+                pln0 = hexPoints[cnt]
+                pln1 = hexPoints[cnt+1]
+                for _p in pln0 :
+                    pts.InsertNextPoint(_p)
+                for _p in pln1 :
+                    pts.InsertNextPoint(_p)
+                if i == 10 and j == 10 :
+                    print(i,j, pts.GetNumberOfPoints())
+
+                grid3D.InsertNextCell(vtk.VTK_HEXAHEDRON, 8, [ptId+0, ptId+1, ptId+2, ptId+3, ptId+4, ptId+5, ptId+6, ptId+7])
+                arrI.InsertNextValue(i)
+                arrJ.InsertNextValue(j)
+                arrK.InsertNextValue(k)
+
+                ptId = ptId+8
+
+    writeVTK(grid3D, '/Users/dpn/grid3D.vtk')
+    print('nc= ', nc)
+    print(numJRefine, 'NumPts:', grid3D.GetNumberOfPoints(), grid3D.GetNumberOfCells(), loopCnt)
+    return grid3D
+
+def build3DMesh2(grid2D, ncData) :
+    zShiftMap = {}
+    def getPt(_ds, idx) :
+        _p = _ds.GetPoint(idx)
+        return [_p[0], _p[1], 0]
+    def inBounds(i,j, bounds) :
+        if i < bounds[0][0] or i > bounds[0][1] :
+            return False
+        if j < bounds[1][0] or j > bounds[1][1] :
+            return False
+        return True
+
+    phi = ncData.read('phi')
+    nx = phi.shape[0]
+    ny = phi.shape[1]
+    nk = phi.shape[2]
+
+    grid3D = vtk.vtkUnstructuredGrid()
+    pts = vtk.vtkPoints()
+    grid3D.SetPoints(pts)
+    arrI = vtk.vtkFloatArray()
+    arrJ = vtk.vtkFloatArray()
+    arrK = vtk.vtkFloatArray()
+    arrZShift = vtk.vtkFloatArray()
+    arrI.SetName('I')
+    arrJ.SetName('J')
+    arrK.SetName('K')
+    arrZShift.SetName('zShift')
+
+    grid3D.GetCellData().AddArray(arrI)
+    grid3D.GetCellData().AddArray(arrJ)
+    grid3D.GetCellData().AddArray(arrK)
+    grid3D.GetCellData().AddArray(arrZShift)
+
+    #zShift = ds.GetPointData().GetArray('zShiftDiff')
+    zShift = grid2D.GetCellData().GetArray('zShift')
+    np = grid2D.GetNumberOfPoints()
+    nc = grid2D.GetNumberOfCells()
+
+    ptId = 0
+    #nk = 10
+    dz = 0.015514
+    nzs = zShift.GetNumberOfValues()
+    for k in range(nk) :
+        for cellIdx in range(nc) :
+            i = cellIdx // ny
+            j = cellIdx % ny
+
+            cell = grid2D.GetCell(cellIdx)
+            ptIds = cell.GetPointIds()
+
+            ids = [ptIds.GetId(0), ptIds.GetId(1), ptIds.GetId(2), ptIds.GetId(3)]
+            quadPts = (getPt(grid2D,ids[0]), getPt(grid2D,ids[1]), getPt(grid2D,ids[2]), getPt(grid2D,ids[3]))
+
+            zij = zShift.GetValue(cellIdx)
+            arrZShift.InsertNextValue(zij)
+
+            numZRefine = 0
+            hexPoints = getHexPoints(quadPts, k, dz, 0,0, numZRefine)
 
             # add the points and cells for each hex.
             for cnt in range(len(hexPoints)-1) :
@@ -504,12 +690,120 @@ def build3DMesh(grid2D, data, nx, ny, guardJ) :
                 arrK.InsertNextValue(k)
 
                 ptId = ptId+8
-                if k == nk-1 :
-                    print(_p[2])
-
 
     writeVTK(grid3D, '/Users/dpn/grid3D.vtk')
     return grid3D
+
+
+def refineQuadMesh(grid2D, ncgrid, jRefine) :
+    def getPt(_ds, idx) :
+        _p = _ds.GetPoint(idx)
+        return [_p[0], _p[1], 0]
+    def addVar(varNm, grid0, grid, idx) :
+        grid0.GetCellData().GetArray(varNm).InsertNextValue(grid.GetCellData().GetArray(varNm).GetValue(idx))
+    def interp(p0, p1, t) :
+        dx = p1[0]-p0[0]
+        dy = p1[1]-p0[1]
+        dz = p1[2]-p0[2]
+        pi = (p0[0] + t*dx, p0[1] + t*dy, p0[2] + t*dz)
+        return pi
+
+    #if jRefine == 0 :
+    #    return grid2D
+    ll = (ncgrid['Rxy_corners'].values, ncgrid['Zxy_corners'].values)
+    nx = ll[0].shape[0]
+    ny = ll[0].shape[1]
+    np = grid2D.GetNumberOfPoints()
+    nc = grid2D.GetNumberOfCells()
+
+    grid = vtk.vtkUnstructuredGrid()
+    points = vtk.vtkPoints()
+    grid.SetPoints(points)
+    phiVar, zShiftVar, cellIdVar, ptIdVar = vtk.vtkFloatArray(), vtk.vtkFloatArray(), vtk.vtkFloatArray(), vtk.vtkFloatArray()
+    phiVar.SetName('phi')
+    zShiftVar.SetName('zShift')
+    #ptIdVar.SetName('pointId')
+    cellIdVar.SetName('cellId')
+    grid.GetCellData().AddArray(phiVar)
+    grid.GetCellData().AddArray(zShiftVar)
+    grid.GetCellData().AddArray(cellIdVar)
+    #grid.GetPointData().AddArray(ptIdVar)
+    idxIVar, idxJVar = vtk.vtkFloatArray(), vtk.vtkFloatArray()
+    idxIVar.SetName('i')
+    idxJVar.SetName('j')
+    grid.GetCellData().AddArray(idxIVar)
+    grid.GetCellData().AddArray(idxJVar)
+
+    cellId = 0
+    cellId0 = 0
+    ptId = 0
+    for cellIdx in range(nc) :
+        i = cellIdx // ny
+        j = cellIdx % ny
+
+        cell = grid2D.GetCell(cellIdx)
+        ptIds = cell.GetPointIds()
+
+        ids = [ptIds.GetId(0), ptIds.GetId(1), ptIds.GetId(2), ptIds.GetId(3)]
+        quadPts = (getPt(grid2D,ids[0]), getPt(grid2D,ids[1]), getPt(grid2D,ids[2]), getPt(grid2D,ids[3]))
+        printPts = []
+
+        if jRefine == 0 :
+            #for id in ids:
+            #    ptIdVar.InsertNextValue(grid2D.GetPointData().GetArray('pointId').GetValue(id))
+            for vnm in ['phi', 'zShift', 'cellId', 'i', 'j'] :
+                addVar(vnm, grid, grid2D, cellId0)
+
+            for p in quadPts :
+                points.InsertNextPoint(p)
+                printPts.append(p)
+            cellId0 = cellId0+1
+            ptId = ptId+4
+        else :
+            printIt = False
+            if i == 25 and j == 20 :
+                printIt = True
+            v0 = quadPts[0]
+            v1 = quadPts[1]
+            v2 = quadPts[2]
+            v3 = quadPts[3]
+            dT = 1.0 / (jRefine+1)
+            t = 0.0
+            for n in range(jRefine+1) :
+                vi0 = interp(v0,v3, t)
+                vi1 = interp(v1,v2, t)
+                vi2 = interp(v1,v2, t+dT)
+                vi3 = interp(v0,v3, t+dT)
+
+                points.InsertNextPoint(vi0)
+                points.InsertNextPoint(vi1)
+                points.InsertNextPoint(vi2)
+                points.InsertNextPoint(vi3)
+
+                printPts.append(vi0)
+                printPts.append(vi1)
+                printPts.append(vi2)
+                printPts.append(vi3)
+                for vnm in ['phi', 'zShift', 'cellId', 'i', 'j'] :
+                    addVar(vnm, grid, grid2D, cellId0)
+
+                t = t + dT
+                cellId = cellId + 1
+
+            cellId0 = cellId0 + 1
+        if i == 25 and j == 20 :
+            print('********************')
+            for p in printPts :
+                print(p)
+            print('********************')
+
+    np = points.GetNumberOfPoints()
+    for i in range(0, np, 4) :
+        ptIds = [i+0,i+1,i+2,i+3]
+        grid.InsertNextCell(vtk.VTK_QUAD, 4, ptIds)
+
+
+    return grid
 
 
 def buildQuadMesh(ds, data, guardJ) :
@@ -628,47 +922,17 @@ ncgrid = xr.open_dataset('./1_5_torus/65402_68x32_revIp_wide_fixBp_curv.nc')
 data = ad.FileReader('./1_5_torus/BOUT.dmp.bp')
 
 guardJ = 2
+jRefine = 15
 (grid,nx,ny) = buildQuadMesh(ncgrid, data, guardJ)
 grid = addZShiftStuff(grid, data, nx,ny, guardJ)
-grid = build3DMesh(grid, data, nx, ny, guardJ)
+writeVTK(grid, '/Users/dpn/quadGrid.vtk')
+#grid = refineQuadMesh(grid, ncgrid, jRefine)
+#writeVTK(grid, '/Users/dpn/quadGridRefine.vtk')
+grid = build3DMesh(grid, data, nx, ny, guardJ, jRefine)
+#grid = build3DMesh2(grid, data)
 
 numDup = 5
 grid = duplicate3DMesh(grid, numDup)
 
 
 meow()
-
-zShift = ds['zShift'].values
-phi = ds['phi'].values
-grid = vtk.vtkImageData()
-grid.SetDimensions(68+1,64+1,1)
-var = vtk.vtkFloatArray()
-phiV = vtk.vtkFloatArray()
-var.SetName('zShift')
-phiV.SetName('phi')
-grid.GetCellData().AddArray(var)
-grid.GetCellData().AddArray(phiV)
-cnt = 0
-for j in range(64) :
-    for i in range(68) :
-        #var.InsertNextValue(cnt)
-        var.InsertNextValue(zShift[i,j])
-        phiV.InsertNextValue(phi[i,j,0])
-        cnt = cnt+1
-writeVTK(grid, '/Users/dpn/uniform.vtk')
-
-grid = buildQuadMesh(ds['phi'])
-grid = addZShiftStuff(grid, ds)
-build3DMesh(grid, ds)
-print('\n\n********\n All done.\n\n')
-meow()
-
-lowerLeft = (ds['Rxy_lower_left_corners'], ds['Zxy_lower_left_corners'])
-upperLeft = (ds['Rxy_upper_left_corners'], ds['Zxy_upper_left_corners'])
-lowerRight = (ds['Rxy_lower_right_corners'], ds['Zxy_lower_right_corners'])
-upperRight = (ds['Rxy_upper_right_corners'], ds['Zxy_upper_right_corners'])
-dumpGrid(lowerLeft, upperLeft, lowerRight, upperRight, None)
-
-dataShifted = doFFT(ds, 'phi')
-print(' done with fft...')
-
